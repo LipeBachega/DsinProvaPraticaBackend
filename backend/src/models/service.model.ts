@@ -4,7 +4,7 @@ import type { IService, serviceType } from "../types/service.type.js";
 
 class Service extends Model<IService> {
   public id!: number;
-  public name!: string;
+
   public price!: number;
   public serviceType!: serviceType;
 }
@@ -16,10 +16,7 @@ Service.init(
       autoIncrement: true,
       primaryKey: true,
     },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
+
     price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
