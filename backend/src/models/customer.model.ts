@@ -3,11 +3,11 @@ import sequelize from "../config/database.js"; // Lembre-se do .js no final por 
 import type { ICustomer, ICustomerCreate } from "../types/customer.type.js";
 
 class Customer extends Model<ICustomer, ICustomerCreate> {
-  public id!: number;
-  public name!: string;
-  public email!: string;
-  public phone!: string;
-  public password!: string;
+  declare id: number;
+  declare name: string;
+  declare email: string;
+  declare phone: string;
+  declare password: string;
 }
 
 Customer.init(
@@ -32,6 +32,7 @@ Customer.init(
     phone: {
       type: DataTypes.STRING,
       allowNull: false,
+      unique: true,
     },
     password: {
       type: DataTypes.STRING,
