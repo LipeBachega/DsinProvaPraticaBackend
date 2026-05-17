@@ -1,8 +1,8 @@
 import { Model, DataTypes } from "sequelize";
 import sequelize from "../config/database.js"; // Lembre-se do .js no final por conta do ES Modules/NodeNext
-import type { ICustomer } from "../types/customer.type.js";
+import type { ICustomer, ICustomerCreate } from "../types/customer.type.js";
 
-class Customer extends Model<ICustomer> {
+class Customer extends Model<ICustomer, ICustomerCreate> {
   public id!: number;
   public name!: string;
   public email!: string;
