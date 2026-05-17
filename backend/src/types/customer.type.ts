@@ -6,6 +6,4 @@ export interface ICustomer {
   password: string;
 }
 
-export interface ICustomerCreate extends ICustomer {
-  password: string;
-}
+export type ICustomerCreate = Omit<ICustomer, "id">;
