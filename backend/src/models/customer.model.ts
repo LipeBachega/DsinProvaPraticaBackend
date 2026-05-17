@@ -1,13 +1,19 @@
 import { Model, DataTypes } from "sequelize";
 import sequelize from "../config/database.js"; // Lembre-se do .js no final por conta do ES Modules/NodeNext
-import type { ICustomer, ICustomerCreate } from "../types/customer.type.js";
+import type {
+  ICustomer,
+  ICustomerCreate,
+  ICustomerInternalCreate,
+  IUserRole,
+} from "../types/customer.type.js";
 
-class Customer extends Model<ICustomer, ICustomerCreate> {
+class Customer extends Model<ICustomer, ICustomerInternalCreate> {
   declare id: number;
   declare name: string;
   declare email: string;
   declare phone: string;
   declare password: string;
+  declare role: IUserRole;
 }
 
 Customer.init(
@@ -38,12 +44,30 @@ Customer.init(
       type: DataTypes.STRING,
       allowNull: false,
     },
+    role: {
+      type: DataTypes.ENUM("CUSTOMER", "ADMIN"),
+      allowNull: false,
+      defaultValue: "CUSTOMER",
+    },
   },
   {
     sequelize,
+
     modelName: "Customer",
+
     tableName: "customers",
+
     timestamps: true,
+
+    defaultScope: {
+      attributes: {
+        exclude: ["password"],
+      },
+    },
+
+    scopes: {
+      withPassword: {},
+    },
   },
 );
 

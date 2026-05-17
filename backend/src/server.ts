@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 
 import { customerRoutes } from "./routes/customer.route.js";
 import { initDatabase } from "./config/initiDataBase.js";
+import { loginRoutes } from "./routes/login.route.js";
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ async function bootstrap() {
 
   // Rotas
   await fastify.register(customerRoutes);
+  await fastify.register(loginRoutes);
 
   // Rota de teste
   fastify.get("/health", async (request, reply) => {
@@ -34,7 +36,6 @@ async function bootstrap() {
     await initDatabase();
     await fastify.listen({ port, host: "0.0.0.0" });
     console.log(`Servidor rodando em http://localhost:${port}`);
-    
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

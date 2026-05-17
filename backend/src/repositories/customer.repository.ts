@@ -27,4 +27,18 @@ export default class CustomerRepository {
 
     return customer.toJSON() as ICustomer;
   };
+
+  findByEmailWithPassword = async (
+    email: string,
+  ): Promise<ICustomer | null> => {
+    const customer = await Customer.scope("withPassword").findOne({
+      where: { email },
+    });
+
+    if (!customer) {
+      return null;
+    }
+
+    return customer.toJSON() as ICustomer;
+  };
 }
