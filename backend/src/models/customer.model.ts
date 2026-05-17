@@ -7,6 +7,7 @@ class Customer extends Model<ICustomer> {
   public name!: string;
   public email!: string;
   public phone!: string;
+  public password!: string;
 }
 
 Customer.init(
@@ -29,6 +30,10 @@ Customer.init(
       },
     },
     phone: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    password: {
       type: DataTypes.STRING,
       allowNull: false,
     },
