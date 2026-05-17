@@ -6,14 +6,16 @@ export default class CustomerController {
   private customerService = new CustomerService();
 
   create = async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const customer = request.body as ICustomerCreate;
+    const customer = request.body as ICustomerCreate;
 
-      const response = await this.customerService.create(customer);
-      reply.status(201).send(response);
-    } catch (err) {
-      reply.status(500).send(err);
-    }
+    const response = await this.customerService.create(customer);
+
+    reply.status(response.status).send({
+      message: response.message,
+      success: response.success,
+      data: response.data,
+      error: response.error,
+    });
   };
   listAll = async (request: FastifyRequest, reply: FastifyReply) => {
     reply.send("List All");
