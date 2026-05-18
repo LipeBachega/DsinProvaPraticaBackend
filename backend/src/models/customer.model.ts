@@ -7,7 +7,10 @@ import type {
   IUserRole,
 } from "../types/customer.type.js";
 
-class Customer extends Model<ICustomer, ICustomerInternalCreate> {
+class Customer extends Model<
+  ICustomer,
+  ICustomerInternalCreate | ICustomerCreate
+> {
   declare id: number;
   declare name: string;
   declare email: string;
