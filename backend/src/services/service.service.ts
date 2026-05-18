@@ -1,6 +1,7 @@
 import type IResponse from "../types/response.type.js";
 import type { IService } from "../types/service.type.js";
 import ServiceRepository from "../repositories/service.repository.js";
+import { formatBrazilDateTime } from "../utils/datetime.lib.js";
 
 export default class ServiceService {
   private serviceRepository = new ServiceRepository();
@@ -13,7 +14,7 @@ export default class ServiceService {
         status: 200,
         success: true,
         message: "Servicos listados com sucesso.",
-        data: services,
+        data: services.map((service) => this.serializeService(service)),
       };
     } catch (error: any) {
       return {
@@ -24,4 +25,25 @@ export default class ServiceService {
       };
     }
   };
+
+  private serializeService(service: IService): IService {
+    const serializedService = { ...service } as IService & {
+      createdAt?: string;
+      updatedAt?: string;
+    };
+
+    if (serializedService.createdAt) {
+      serializedService.createdAt = formatBrazilDateTime(
+        serializedService.createdAt,
+      );
+    }
+
+    if (serializedService.updatedAt) {
+      serializedService.updatedAt = formatBrazilDateTime(
+        serializedService.updatedAt,
+      );
+    }
+
+    return serializedService;
+  }
 }
