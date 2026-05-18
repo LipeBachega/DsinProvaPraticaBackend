@@ -6,6 +6,7 @@ import { customerRoutes } from "./routes/customer.route.js";
 import { initDatabase } from "./config/initiDataBase.js";
 import { loginRoutes } from "./routes/login.route.js";
 import { serviceRoutes } from "./routes/service.route.js";
+import { appointmentRoutes } from "./routes/appointment.route.js";
 
 dotenv.config();
 
@@ -14,6 +15,7 @@ const fastify = Fastify({
 });
 
 async function bootstrap() {
+  // O bootstrap concentra a ordem de subida da API: plugins, rotas, banco e porta.
   // Configurando o CORS para permitir que o React acesse o Back
   await fastify.register(cors, {
     origin: "*", // Em produção você limitaria, mas para o teste local isso evita travas
@@ -23,6 +25,7 @@ async function bootstrap() {
   await fastify.register(customerRoutes);
   await fastify.register(loginRoutes);
   await fastify.register(serviceRoutes);
+  await fastify.register(appointmentRoutes);
 
   // Rota de teste
   fastify.get("/health", async (request, reply) => {
