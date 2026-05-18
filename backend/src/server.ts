@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { customerRoutes } from "./routes/customer.route.js";
 import { initDatabase } from "./config/initiDataBase.js";
 import { loginRoutes } from "./routes/login.route.js";
+import { serviceRoutes } from "./routes/service.route.js";
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ async function bootstrap() {
   // Rotas
   await fastify.register(customerRoutes);
   await fastify.register(loginRoutes);
+  await fastify.register(serviceRoutes);
 
   // Rota de teste
   fastify.get("/health", async (request, reply) => {

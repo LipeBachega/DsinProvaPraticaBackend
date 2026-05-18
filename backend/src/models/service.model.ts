@@ -1,11 +1,11 @@
 import { Model, DataTypes } from "sequelize";
-import sequelize from "../config/database.js"; // Lembre-se do .js no final por conta do ES Modules/NodeNext
+import sequelize from "../config/database.js";
 import type { IService, serviceType } from "../types/service.type.js";
 
 class Service extends Model<IService> {
   public id!: number;
-
   public price!: number;
+  public estimatedTimeInMinutes!: number;
   public serviceType!: serviceType;
 }
 
@@ -16,9 +16,12 @@ Service.init(
       autoIncrement: true,
       primaryKey: true,
     },
-
     price: {
       type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+    },
+    estimatedTimeInMinutes: {
+      type: DataTypes.INTEGER,
       allowNull: false,
     },
     serviceType: {
