@@ -73,6 +73,13 @@ export default class AppointmentRepository {
     }
   };
 
+  updateStatus = async (
+    appointment: Appointment,
+    status: IAppointmentDetail["status"],
+  ): Promise<void> => {
+    await appointment.update({ status });
+  };
+
   findModelById = async (id: number): Promise<Appointment | null> => {
     return Appointment.findByPk(id);
   };

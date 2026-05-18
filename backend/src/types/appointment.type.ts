@@ -22,6 +22,10 @@ export interface IAppointmentUpdateInput {
   serviceIds: number[];
 }
 
+export interface IAppointmentStatusUpdateInput {
+  status: AppointmentStatus;
+}
+
 export interface IAppointmentCreateData {
   customerId: number;
   startDate: Date;

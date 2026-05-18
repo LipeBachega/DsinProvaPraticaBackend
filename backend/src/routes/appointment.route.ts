@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { authMiddleware } from "../middleware/auth.middleware.js";
+import { adminMiddleware } from "../middleware/admin.middleware.js";
 import AppointmentController from "../controllers/appointment.controller.js";
 
 export async function appointmentRoutes(fastify: FastifyInstance) {
@@ -30,5 +31,10 @@ export async function appointmentRoutes(fastify: FastifyInstance) {
     "/appointments/:id",
     { preHandler: authMiddleware },
     appointment.update,
+  );
+  fastify.patch(
+    "/appointments/:id/status",
+    { preHandler: [authMiddleware, adminMiddleware] },
+    appointment.updateStatus,
   );
 }

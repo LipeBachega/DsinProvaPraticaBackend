@@ -4,6 +4,7 @@ import type {
   IAppointmentAvailabilityQueryInput,
   IAppointmentCreateData,
   IAppointmentHistoryQuery,
+  IAppointmentStatusUpdateInput,
   IAppointmentUpdateInput,
 } from "../types/appointment.type.js";
 
@@ -46,6 +47,23 @@ export default class AppointmentController {
 
     const response = await this.appointmentService.update(
       request.user,
+      Number(params.id),
+      data,
+    );
+
+    return reply.status(response.status).send({
+      success: response.success,
+      message: response.message,
+      data: response.data,
+      error: response.error,
+    });
+  };
+
+  updateStatus = async (request: FastifyRequest, reply: FastifyReply) => {
+    const params = request.params as { id: string };
+    const data = request.body as IAppointmentStatusUpdateInput;
+
+    const response = await this.appointmentService.updateStatus(
       Number(params.id),
       data,
     );
