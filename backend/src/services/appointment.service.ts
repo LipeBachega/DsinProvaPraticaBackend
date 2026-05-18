@@ -5,7 +5,11 @@ import type {
   IAppointmentAvailabilityResponse,
   IAppointmentCreateData,
   IAppointmentDetail,
+  IAppointmentHistoryQuery,
+  IAppointmentResponseData,
+  IAppointmentUpdateInput,
 } from "../types/appointment.type.js";
+import type { IAuthenticatedUser } from "../types/auth.type.js";
 import type IResponse from "../types/response.type.js";
 import type { IService } from "../types/service.type.js";
 
@@ -211,6 +215,222 @@ export default class AppointmentService {
     }
   };
 
+  update = async (
+    user: IAuthenticatedUser,
+    appointmentId: number,
+    data: IAppointmentUpdateInput,
+  ): Promise<IResponse<IAppointmentResponseData>> => {
+    try {
+      const appointment =
+        await this.appointmentRepository.findModelById(appointmentId);
+
+      if (!appointment) {
+        return {
+          status: 404,
+          success: false,
+          message: "Agendamento nao encontrado.",
+        };
+      }
+
+      if (!this.canAccessAppointment(user, appointment.customerId)) {
+        return {
+          status: 403,
+          success: false,
+          message: "Acesso negado.",
+        };
+      }
+
+      if (
+        user.role !== "ADMIN" &&
+        !this.canChangeAppointment(appointment.startDate)
+      ) {
+        return {
+          status: 400,
+          success: false,
+          message:
+            "O agendamento so pode ser alterado pelo sistema ate 2 dias antes da data marcada.",
+        };
+      }
+
+      const services = await this.serviceRepository.findByIds(data.serviceIds);
+
+      if (services.length !== new Set(data.serviceIds).size) {
+        return {
+          status: 400,
+          success: false,
+          message: "Os dados fornecidos nao sao validos.",
+          error: [
+            {
+              field: "serviceIds",
+              error: "Um ou mais servicos informados nao existem.",
+            },
+          ],
+        };
+      }
+
+      const requiredDurationInMinutes =
+        this.calculateTotalServicesDurationInMinutes(services);
+
+      const startDate = new Date(data.startDate);
+
+      const endDate = new Date(
+        startDate.getTime() + requiredDurationInMinutes * 60000,
+      );
+
+      const businessStart = new Date(startDate);
+
+      businessStart.setHours(this.businessStartHour, 0, 0, 0);
+
+      const businessEnd = new Date(startDate);
+
+      businessEnd.setHours(this.businessEndHour, 0, 0, 0);
+
+      if (startDate < businessStart) {
+        return {
+          status: 400,
+          success: false,
+          message: "Horario fora do expediente.",
+        };
+      }
+
+      if (endDate > businessEnd) {
+        return {
+          status: 400,
+          success: false,
+          message: "Horario excede o expediente.",
+        };
+      }
+
+      const dayStart = new Date(startDate);
+
+      dayStart.setHours(0, 0, 0, 0);
+
+      const dayEnd = new Date(startDate);
+
+      dayEnd.setHours(23, 59, 59, 999);
+
+      const appointments = await this.appointmentRepository.findByDay(
+        dayStart,
+        dayEnd,
+        appointment.id,
+      );
+
+      const conflict = this.hasConflict(startDate, endDate, appointments);
+
+      if (conflict) {
+        return {
+          status: 400,
+          success: false,
+          message: "Ja existe um agendamento nesse horario.",
+        };
+      }
+
+      await this.appointmentRepository.update(appointment, {
+        startDate,
+        endDate,
+        serviceIds: data.serviceIds,
+      });
+
+      const detail = await this.appointmentRepository.findById(appointmentId);
+
+      if (!detail) {
+        return {
+          status: 500,
+          success: false,
+          message: "Erro interno no servidor ao atualizar agendamento.",
+        };
+      }
+
+      return {
+        status: 200,
+        success: true,
+        message: "Agendamento atualizado com sucesso.",
+        data: {
+          appointment: detail,
+        },
+      };
+    } catch (error: any) {
+      return {
+        status: 500,
+        success: false,
+        message: "Erro interno no servidor ao atualizar agendamento.",
+        error: error.message,
+      };
+    }
+  };
+
+  detail = async (
+    appointmentId: number,
+    user: IAuthenticatedUser,
+  ): Promise<IResponse<IAppointmentDetail>> => {
+    try {
+      const appointment =
+        await this.appointmentRepository.findById(appointmentId);
+
+      if (!appointment) {
+        return {
+          status: 404,
+          success: false,
+          message: "Agendamento nao encontrado.",
+        };
+      }
+
+      if (appointment.customerId !== user.id && user.role !== "ADMIN") {
+        return {
+          status: 403,
+          success: false,
+          message: "Voce nao possui permissao para acessar este agendamento.",
+        };
+      }
+
+      return {
+        status: 200,
+        success: true,
+        message: "Agendamento encontrado com sucesso.",
+        data: appointment,
+      };
+    } catch (error: any) {
+      return {
+        status: 500,
+        success: false,
+        message: "Erro interno no servidor ao buscar agendamento.",
+        error: error.message,
+      };
+    }
+  };
+
+  history = async (
+    user: IAuthenticatedUser,
+    query: IAppointmentHistoryQuery,
+  ): Promise<IResponse<IAppointmentDetail[]>> => {
+    try {
+      const startDate = new Date(query.startDate);
+      const endDate = new Date(query.endDate);
+
+      const appointments =
+        await this.appointmentRepository.findByCustomerAndPeriod(
+          user.id,
+          startDate,
+          endDate,
+        );
+
+      return {
+        status: 200,
+        success: true,
+        message: "Historico de agendamentos listado com sucesso.",
+        data: appointments,
+      };
+    } catch (error: any) {
+      return {
+        status: 500,
+        success: false,
+        message:
+          "Erro interno no servidor ao listar historico de agendamentos.",
+        error: error.message,
+      };
+    }
+  };
+
   // Metodos auxiliares
   private calculateTotalServicesDurationInMinutes = (
     services: IService[],
@@ -249,5 +469,17 @@ export default class AppointmentService {
         slotEnd > new Date(appointment.startDate)
       );
     });
+  }
+  private canAccessAppointment(
+    user: IAuthenticatedUser,
+    customerId: number,
+  ): boolean {
+    return user.role === "ADMIN" || user.id === customerId;
+  }
+  private canChangeAppointment(date: Date): boolean {
+    const diffInMs = new Date(date).getTime() - new Date().getTime();
+    const twoDaysInMs = 1000 * 60 * 60 * 24 * 2;
+
+    return diffInMs >= twoDaysInMs;
   }
 }
