@@ -11,6 +11,7 @@ class Customer extends Model<
   ICustomer,
   ICustomerInternalCreate | ICustomerCreate
 > {
+  // Os declares ajudam o TypeScript a entender os campos que o Sequelize injeta no model.
   declare id: number;
   declare name: string;
   declare email: string;

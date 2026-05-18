@@ -3,24 +3,25 @@ import AppointmentService from "./appointmentService.model.js";
 import Customer from "./customer.model.js";
 import Service from "./service.model.js";
 
+// Este arquivo centraliza os relacionamentos para o Sequelize montar os joins corretamente.
 
-// Relação 1:N -> Um Cliente tem vários Agendamentos
+// Relacao 1:N -> Um cliente tem varios agendamentos.
 Customer.hasMany(Appointment, { foreignKey: "customerId", as: "appointments" });
 Appointment.belongsTo(Customer, { foreignKey: "customerId", as: "customer" });
 
-// Relação N:N -> Um Agendamento tem muitos Serviços (e vice-versa)
+// Relacao N:N -> Um agendamento pode agrupar varios servicos no mesmo horario.
 Appointment.belongsToMany(Service, {
   through: AppointmentService,
   foreignKey: "appointmentId",
   otherKey: "serviceId",
-  as: "services"
+  as: "services",
 });
 
 Service.belongsToMany(Appointment, {
   through: AppointmentService,
   foreignKey: "serviceId",
   otherKey: "appointmentId",
-  as: "appointments"
+  as: "appointments",
 });
 
 export { Customer, Service, Appointment, AppointmentService };

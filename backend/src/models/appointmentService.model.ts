@@ -1,6 +1,7 @@
 import { Model, DataTypes } from "sequelize";
 import sequelize from "../config/database.js";
 
+// Tabela de juncao entre agendamentos e servicos.
 class AppointmentService extends Model {
   declare id: number;
   declare appointmentId: number;

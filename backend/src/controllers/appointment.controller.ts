@@ -12,6 +12,7 @@ export default class AppointmentController {
   private appointmentService = new AppointmentService();
 
   availability = async (request: FastifyRequest, reply: FastifyReply) => {
+    // A query pode vir repetida ou em CSV; aqui normalizamos para number[].
     const query = request.query as IAppointmentAvailabilityQueryInput;
     const serviceIds = this.parseServiceIds(query.serviceIds);
 
@@ -29,6 +30,7 @@ export default class AppointmentController {
   };
 
   create = async (request: FastifyRequest, reply: FastifyReply) => {
+    // A criacao usa o usuario autenticado para decidir quem sera o dono do agendamento.
     const data = request.body as IAppointmentCreateData;
 
     const response = await this.appointmentService.create(request.user, data);
@@ -110,6 +112,7 @@ export default class AppointmentController {
       return [];
     }
 
+    // A rota aceita ?serviceIds=1,2 ou ?serviceIds=1&serviceIds=2.
     const rawValues = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
 
     return rawValues

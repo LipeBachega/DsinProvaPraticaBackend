@@ -9,6 +9,7 @@ export default class CustomerService {
   private customerRepository = new CustomerRepository();
 
   create = async (customer: ICustomerCreate): Promise<IResponse> => {
+    // O fluxo de cadastro faz: validar campos, normalizar dados, garantir unicidade e persistir.
     // Primeiro validamos os campos obrigatorios recebidos da requisicao.
     const { isValid, fields } =
       this.validation.createCustomerValidator(customer);

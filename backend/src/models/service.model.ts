@@ -3,6 +3,7 @@ import sequelize from "../config/database.js";
 import type { IService, serviceType } from "../types/service.type.js";
 
 class Service extends Model<IService, Omit<IService, "id">> {
+  // Service representa o catalogo de opcoes que o cliente pode combinar no mesmo horario.
   declare id: number;
   declare price: number;
   declare estimatedTimeInMinutes: number;

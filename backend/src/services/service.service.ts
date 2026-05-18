@@ -8,6 +8,7 @@ export default class ServiceService {
 
   listAll = async (): Promise<IResponse<IService[]>> => {
     try {
+      // Mesmo em uma listagem simples, padronizamos timestamps no horario de Brasilia.
       const services = await this.serviceRepository.listAll();
 
       return {
@@ -27,6 +28,7 @@ export default class ServiceService {
   };
 
   private serializeService(service: IService): IService {
+    // A serializacao evita misturar datas em UTC com o restante das respostas da API.
     const serializedService = { ...service } as IService & {
       createdAt?: string;
       updatedAt?: string;

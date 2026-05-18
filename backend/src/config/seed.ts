@@ -4,6 +4,7 @@ import Service from "../models/service.model.js";
 import { hashPassword } from "../utils/hash.lib.js";
 
 export async function createAdmin() {
+  // O usuario admin representa a Leila nas operacoes administrativas do sistema.
   // Evita criar o mesmo admin toda vez que a aplicacao reinicia.
   const adminExists = await Customer.findOne({
     where: {

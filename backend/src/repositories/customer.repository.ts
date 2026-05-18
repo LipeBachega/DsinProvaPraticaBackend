@@ -3,6 +3,7 @@ import type { ICustomer, ICustomerCreate } from "../types/customer.type.js";
 
 export default class CustomerRepository {
   create = async (customer: ICustomerCreate): Promise<ICustomer> => {
+    // O repository encapsula o Sequelize para o restante da aplicacao trabalhar com objetos simples.
     const createdCustomer = await Customer.create(customer);
 
     // Retorna o objeto JavaScript Puro, garantindo que o ID venha populado e sem travas do Sequelize
@@ -43,6 +44,7 @@ export default class CustomerRepository {
   };
 
   findById = async (id: number): Promise<ICustomer | null> => {
+    // Esta busca e usada quando o admin agenda em nome de outra pessoa.
     const customer = await Customer.findByPk(id);
 
     if (!customer) {

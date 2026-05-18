@@ -11,6 +11,7 @@ import type {
 
 export default class AppointmentRepository {
   create = async (data: IAppointmentCreateData): Promise<Appointment> => {
+    // Primeiro gravamos o cabecalho do agendamento; os servicos entram na tabela N:N.
     const appointment = await Appointment.create({
       customerId: data.customerId,
       startDate: data.startDate,
@@ -24,6 +25,7 @@ export default class AppointmentRepository {
   };
 
   findById = async (id: number): Promise<IAppointmentDetail | null> => {
+    // O detalhe sempre traz os servicos, porque eles sao parte central do caso de uso.
     const appointment = await Appointment.findByPk(id, {
       include: [
         {
@@ -168,6 +170,7 @@ export default class AppointmentRepository {
     endDate: Date,
     excludeAppointmentId?: number,
   ): Promise<IAppointmentDetail[]> => {
+    // Cancelados nao entram em conflito, por isso sao excluidos da agenda do dia.
     const where: Record<string, any> = {
       startDate: {
         [Op.between]: [startDate, endDate],

@@ -7,6 +7,7 @@ import AppointmentController from "../controllers/appointment.controller.js";
 export async function appointmentRoutes(fastify: FastifyInstance) {
   const appointment = new AppointmentController();
 
+  // Toda a agenda exige autenticacao; apenas mudanca de status exige perfil admin.
   fastify.get(
     "/appointments/availability",
     { preHandler: authMiddleware },

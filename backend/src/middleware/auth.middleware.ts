@@ -7,6 +7,7 @@ export async function authMiddleware(
   reply: FastifyReply,
 ) {
   try {
+    // O middleware autentica uma vez e injeta o usuario logado em request.user.
     const authHeader = request.headers.authorization;
 
     if (!authHeader) {

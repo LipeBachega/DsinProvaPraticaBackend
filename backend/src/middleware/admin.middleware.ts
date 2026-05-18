@@ -7,7 +7,7 @@ export async function adminMiddleware(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
-
+  // Esta checagem e usada quando a regra de negocio exige privilegio administrativo.
   if (
     request.user.role !== "ADMIN"
   ) {

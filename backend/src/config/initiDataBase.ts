@@ -8,6 +8,7 @@ import { createAdmin, createDefaultServices } from "./seed.js";
 
 export async function initDatabase() {
   try {
+    // A inicializacao do banco tambem garante o seed minimo para o fluxo principal funcionar do zero.
     console.log("Conectando e sincronizando o banco de dados SQLite...");
 
     await sequelize.sync();

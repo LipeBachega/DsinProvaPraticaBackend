@@ -13,6 +13,7 @@ export default class AuthService {
 
   login = async (data: ILogin): Promise<IResponse> => {
     try {
+      // Buscamos a senha via scope dedicado para nao expor esse campo em consultas normais.
       const customer = await this.customerRepository.findByEmailWithPassword(
         data.email,
       );
@@ -44,6 +45,7 @@ export default class AuthService {
         role: customer.role,
       });
 
+      // O token carrega apenas o minimo necessario para autenticacao e autorizacao.
       return {
         status: 200,
         success: true,

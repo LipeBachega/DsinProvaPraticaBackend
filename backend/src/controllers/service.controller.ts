@@ -5,6 +5,7 @@ export default class ServiceController {
   private serviceService = new ServiceService();
 
   listAll = async (_request: FastifyRequest, reply: FastifyReply) => {
+    // Controller simples: apenas repassa a resposta padronizada da camada de service.
     const response = await this.serviceService.listAll();
 
     return reply.status(response.status).send({

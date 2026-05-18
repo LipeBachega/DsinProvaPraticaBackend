@@ -12,6 +12,7 @@ import type {
 } from "../types/appointment.type.js";
 
 class Appointment extends Model<IAppointment> implements IAppointment {
+  // Este model guarda o cabecalho do agendamento; os servicos ficam na relacao N:N.
   declare id: number;
 
   declare customerId: number;

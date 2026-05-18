@@ -7,6 +7,7 @@ export default class AuthController {
   private authService = new AuthService();
 
   login = async (request: FastifyRequest, reply: FastifyReply) => {
+    // O login delega a validacao de credenciais ao service e devolve o token gerado.
     const data = request.body as ILogin;
 
     const response = await this.authService.login(data);

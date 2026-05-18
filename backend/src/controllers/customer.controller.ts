@@ -6,6 +6,7 @@ export default class CustomerController {
   private customerService = new CustomerService();
 
   create = async (request: FastifyRequest, reply: FastifyReply) => {
+    // O controller traduz a entrada HTTP para o formato esperado pelo service.
     const customer = request.body as ICustomerCreate;
 
     const response = await this.customerService.create(customer);
@@ -18,6 +19,7 @@ export default class CustomerController {
     });
   };
   listAll = async (request: FastifyRequest, reply: FastifyReply) => {
+    // Esta rota ainda esta como placeholder; a listagem real nao foi implementada.
     reply.send("List All");
   };
 }
