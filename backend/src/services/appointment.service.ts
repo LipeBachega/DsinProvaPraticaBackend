@@ -27,59 +27,34 @@ export default class AppointmentService {
       const services = await this.serviceRepository.findByIds(query.serviceIds);
 
       if (services.length !== new Set(query.serviceIds).size) {
-        return {
-          status: 400,
-
-          success: false,
-
-          message: "Os dados fornecidos nao sao validos.",
-
-          error: [
-            {
-              field: "serviceIds",
-
-              error: "Um ou mais servicos informados nao existem.",
-            },
-          ],
-        };
+        return this.badRequestResponse(
+          "serviceIds",
+          "Um ou mais servicos informados nao existem.",
+        );
       }
 
       const requiredDurationInMinutes =
         this.calculateTotalServicesDurationInMinutes(services);
-
-      const dayStart = new Date(query.date);
-
-      dayStart.setHours(0, 0, 0, 0);
-
-      const dayEnd = new Date(query.date);
-
-      dayEnd.setHours(23, 59, 59, 999);
-
-      const appointments = await this.appointmentRepository.findByDay(
-        dayStart,
-        dayEnd,
-      );
-
       const slots = this.generateSlots(query.date);
 
+      // Busca agendamentos do dia de forma otimizada para a checagem
+      const appointments = await this.getAppointmentsByDay(
+        new Date(query.date),
+      );
       const availableSlots = [];
 
       for (const slotStart of slots) {
         const slotEnd = new Date(
           slotStart.getTime() + requiredDurationInMinutes * 60000,
         );
-
         const businessLimit = new Date(query.date);
-
         businessLimit.setHours(this.businessEndHour, 0, 0, 0);
 
         if (slotEnd > businessLimit) {
           continue;
         }
 
-        const conflict = this.hasConflict(slotStart, slotEnd, appointments);
-
-        if (conflict) {
+        if (this.hasConflict(slotStart, slotEnd, appointments)) {
           continue;
         }
 
@@ -88,14 +63,11 @@ export default class AppointmentService {
             hour: "2-digit",
             minute: "2-digit",
           }),
-
           endTime: slotEnd.toLocaleTimeString("pt-BR", {
             hour: "2-digit",
             minute: "2-digit",
           }),
-
           startDateTime: slotStart.toISOString(),
-
           endDateTime: slotEnd.toISOString(),
         });
       }
@@ -113,80 +85,51 @@ export default class AppointmentService {
     } catch (error) {
       return {
         status: 500,
-
         success: false,
-
         message: "Erro interno no servidor.",
-
         error,
       };
     }
   };
 
-  create = async (data: IAppointmentCreateData): Promise<IResponse> => {
+  create = async (
+    user: IAuthenticatedUser,
+    data: IAppointmentCreateData,
+  ): Promise<IResponse> => {
     try {
+      // Ajuste de Segurança: impede que cliente comum agende no ID de terceiros
+      const customerId = user.role === "ADMIN" ? data.customerId : user.id;
+
       const services = await this.serviceRepository.findByIds(data.serviceIds);
       if (services.length !== new Set(data.serviceIds).size) {
-        return {
-          status: 400,
-          success: false,
-          message: "Os dados fornecidos nao sao validos.",
-          error: [
-            {
-              field: "serviceIds",
-              error: "Um ou mais servicos informados nao existem.",
-            },
-          ],
-        };
+        return this.badRequestResponse(
+          "serviceIds",
+          "Um ou mais servicos informados nao existem.",
+        );
       }
 
       const requiredDurationInMinutes =
         this.calculateTotalServicesDurationInMinutes(services);
-
+      const startDate = new Date(data.startDate);
       const endDate = new Date(
-        data.startDate.getTime() + requiredDurationInMinutes * 60000,
+        startDate.getTime() + requiredDurationInMinutes * 60000,
       );
 
-      const businessStart = new Date(data.startDate);
-
-      businessStart.setHours(this.businessStartHour, 0, 0, 0);
-
-      const businessEnd = new Date(data.startDate);
-
-      businessEnd.setHours(this.businessEndHour, 0, 0, 0);
-
-      if (data.startDate < businessStart) {
+      // Validação Centralizada de Horário Comercial
+      if (!this.isWithinBusinessHours(startDate, endDate)) {
         return {
           status: 400,
           success: false,
-          message: "Horario fora do expediente.",
+          message: "Horario fora dos limites do expediente.",
         };
       }
 
-      if (endDate > businessEnd) {
-        return {
-          status: 400,
-          success: false,
-          message: "Horario excede o expediente.",
-        };
-      }
-
-      const dayStart = new Date(data.startDate);
-
-      dayStart.setHours(0, 0, 0, 0);
-
-      const dayEnd = new Date(data.startDate);
-
-      dayEnd.setHours(23, 59, 59, 999);
-
-      const appointments = await this.appointmentRepository.findByDay(
-        dayStart,
-        dayEnd,
+      // Validação Centralizada de Conflitos na Agenda
+      const hasConflict = await this.validateScheduleConflict(
+        startDate,
+        endDate,
       );
-
-      const conflict = this.hasConflict(data.startDate, endDate, appointments);
-
-      if (conflict) {
+      if (hasConflict) {
         return {
           status: 400,
           success: false,
@@ -196,6 +139,8 @@ export default class AppointmentService {
 
       const appointment = await this.appointmentRepository.create({
         ...data,
+        customerId,
+        startDate,
         endDate,
       });
 
@@ -233,11 +178,7 @@ export default class AppointmentService {
       }
 
       if (!this.canAccessAppointment(user, appointment.customerId)) {
-        return {
-          status: 403,
-          success: false,
-          message: "Acesso negado.",
-        };
+        return { status: 403, success: false, message: "Acesso negado." };
       }
 
       if (
@@ -253,71 +194,36 @@ export default class AppointmentService {
       }
 
       const services = await this.serviceRepository.findByIds(data.serviceIds);
-
       if (services.length !== new Set(data.serviceIds).size) {
-        return {
-          status: 400,
-          success: false,
-          message: "Os dados fornecidos nao sao validos.",
-          error: [
-            {
-              field: "serviceIds",
-              error: "Um ou mais servicos informados nao existem.",
-            },
-          ],
-        };
+        return this.badRequestResponse(
+          "serviceIds",
+          "Um ou mais servicos informados nao existem.",
+        );
       }
 
       const requiredDurationInMinutes =
         this.calculateTotalServicesDurationInMinutes(services);
-
       const startDate = new Date(data.startDate);
-
       const endDate = new Date(
         startDate.getTime() + requiredDurationInMinutes * 60000,
       );
 
-      const businessStart = new Date(startDate);
-
-      businessStart.setHours(this.businessStartHour, 0, 0, 0);
-
-      const businessEnd = new Date(startDate);
-
-      businessEnd.setHours(this.businessEndHour, 0, 0, 0);
-
-      if (startDate < businessStart) {
+      // Validação Centralizada de Horário Comercial
+      if (!this.isWithinBusinessHours(startDate, endDate)) {
         return {
           status: 400,
           success: false,
-          message: "Horario fora do expediente.",
+          message: "Horario fora dos limites do expediente.",
         };
       }
 
-      if (endDate > businessEnd) {
-        return {
-          status: 400,
-          success: false,
-          message: "Horario excede o expediente.",
-        };
-      }
-
-      const dayStart = new Date(startDate);
-
-      dayStart.setHours(0, 0, 0, 0);
-
-      const dayEnd = new Date(startDate);
-
-      dayEnd.setHours(23, 59, 59, 999);
-
-      const appointments = await this.appointmentRepository.findByDay(
-        dayStart,
-        dayEnd,
+      // Validação Centralizada de Conflitos (passando o ID atual para ignorá-lo na busca)
+      const hasConflict = await this.validateScheduleConflict(
+        startDate,
+        endDate,
         appointment.id,
       );
-
-      const conflict = this.hasConflict(startDate, endDate, appointments);
-
-      if (conflict) {
+      if (hasConflict) {
         return {
           status: 400,
           success: false,
@@ -332,7 +238,6 @@ export default class AppointmentService {
       });
 
       const detail = await this.appointmentRepository.findById(appointmentId);
-
       if (!detail) {
         return {
           status: 500,
@@ -345,9 +250,7 @@ export default class AppointmentService {
         status: 200,
         success: true,
         message: "Agendamento atualizado com sucesso.",
-        data: {
-          appointment: detail,
-        },
+        data: { appointment: detail },
       };
     } catch (error: any) {
       return {
@@ -431,33 +334,34 @@ export default class AppointmentService {
     }
   };
 
-  // Metodos auxiliares
+  // ==========================================
+  // Métodos Auxiliares e Regras de Negócio
+  // ==========================================
+
   private calculateTotalServicesDurationInMinutes = (
     services: IService[],
   ): number => {
-    return services.reduce((total, service) => {
-      return total + service.estimatedTimeInMinutes;
-    }, 0);
+    return services.reduce(
+      (total, service) => total + service.estimatedTimeInMinutes,
+      0,
+    );
   };
+
   private generateSlots(date: string): Date[] {
     const slots: Date[] = [];
-
     const baseDate = new Date(date);
-
     baseDate.setHours(this.businessStartHour, 0, 0, 0);
 
     const endDate = new Date(date);
-
     endDate.setHours(this.businessEndHour, 0, 0, 0);
 
     while (baseDate < endDate) {
       slots.push(new Date(baseDate));
-
       baseDate.setMinutes(baseDate.getMinutes() + this.slotDurationInMinutes);
     }
-
     return slots;
   }
+
   private hasConflict(
     slotStart: Date,
     slotEnd: Date,
@@ -470,16 +374,65 @@ export default class AppointmentService {
       );
     });
   }
+
+  private isWithinBusinessHours(start: Date, end: Date): boolean {
+    const businessStart = new Date(start).setHours(
+      this.businessStartHour,
+      0,
+      0,
+      0,
+    );
+    const businessEnd = new Date(start).setHours(this.businessEndHour, 0, 0, 0);
+    return start.getTime() >= businessStart && end.getTime() <= businessEnd;
+  }
+
+  private async getAppointmentsByDay(
+    date: Date,
+    excludeAppointmentId?: number,
+  ): Promise<IAppointmentDetail[]> {
+    const dayStart = new Date(date).setHours(0, 0, 0, 0);
+    const dayEnd = new Date(date).setHours(23, 59, 59, 999);
+    return this.appointmentRepository.findByDay(
+      new Date(dayStart),
+      new Date(dayEnd),
+      excludeAppointmentId,
+    );
+  }
+
+  private async validateScheduleConflict(
+    start: Date,
+    end: Date,
+    excludeAppointmentId?: number,
+  ): Promise<boolean> {
+    const appointments = await this.getAppointmentsByDay(
+      start,
+      excludeAppointmentId,
+    );
+    return this.hasConflict(start, end, appointments);
+  }
+
   private canAccessAppointment(
     user: IAuthenticatedUser,
     customerId: number,
   ): boolean {
     return user.role === "ADMIN" || user.id === customerId;
   }
+
   private canChangeAppointment(date: Date): boolean {
     const diffInMs = new Date(date).getTime() - new Date().getTime();
     const twoDaysInMs = 1000 * 60 * 60 * 24 * 2;
-
     return diffInMs >= twoDaysInMs;
+  }
+
+  private badRequestResponse<T = unknown>(
+    field: string,
+    error: string,
+  ): IResponse<T> {
+    return {
+      status: 400,
+      success: false,
+      message: "Os dados fornecidos nao sao validos.",
+      error: [{ field, error }],
+    };
   }
 }
