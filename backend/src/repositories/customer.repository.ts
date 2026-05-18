@@ -41,4 +41,14 @@ export default class CustomerRepository {
 
     return customer.toJSON() as ICustomer;
   };
+
+  findById = async (id: number): Promise<ICustomer | null> => {
+    const customer = await Customer.findByPk(id);
+
+    if (!customer) {
+      return null;
+    }
+
+    return customer.toJSON() as ICustomer;
+  };
 }
