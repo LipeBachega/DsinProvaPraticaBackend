@@ -2,11 +2,11 @@ import { Model, DataTypes } from "sequelize";
 import sequelize from "../config/database.js";
 import type { IService, serviceType } from "../types/service.type.js";
 
-class Service extends Model<IService> {
-  public id!: number;
-  public price!: number;
-  public estimatedTimeInMinutes!: number;
-  public serviceType!: serviceType;
+class Service extends Model<IService, Omit<IService, "id">> {
+  declare id: number;
+  declare price: number;
+  declare estimatedTimeInMinutes: number;
+  declare serviceType: serviceType;
 }
 
 Service.init(

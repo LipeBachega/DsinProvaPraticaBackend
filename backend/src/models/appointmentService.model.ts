@@ -2,9 +2,9 @@ import { Model, DataTypes } from "sequelize";
 import sequelize from "../config/database.js";
 
 class AppointmentService extends Model {
-  public id!: number;
-  public appointmentId!: number;
-  public serviceId!: number;
+  declare id: number;
+  declare appointmentId: number;
+  declare serviceId: number;
 }
 
 AppointmentService.init(

@@ -14,6 +14,7 @@ import type IResponse from "../types/response.type.js";
 import type { IService } from "../types/service.type.js";
 
 export default class AppointmentService {
+  // O sistema sugere horarios de 30 em 30 minutos dentro do expediente.
   private readonly slotDurationInMinutes = 30;
   private readonly businessStartHour = 8;
   private readonly businessEndHour = 18;
@@ -24,6 +25,7 @@ export default class AppointmentService {
     query: IAppointmentAvailabilityQuery,
   ): Promise<IResponse<IAppointmentAvailabilityResponse>> => {
     try {
+      // Busca os servicos para descobrir a duracao total do atendimento.
       const services = await this.serviceRepository.findByIds(query.serviceIds);
 
       if (services.length !== new Set(query.serviceIds).size) {
@@ -37,7 +39,7 @@ export default class AppointmentService {
         this.calculateTotalServicesDurationInMinutes(services);
       const slots = this.generateSlots(query.date);
 
-      // Busca agendamentos do dia de forma otimizada para a checagem
+      // Com os agendamentos do dia em maos, filtramos apenas os horarios livres.
       const appointments = await this.getAppointmentsByDay(
         new Date(query.date),
       );
@@ -98,6 +100,7 @@ export default class AppointmentService {
   ): Promise<IResponse> => {
     try {
       // Ajuste de Segurança: impede que cliente comum agende no ID de terceiros
+      // Cliente comum so agenda para si mesmo; admin pode informar outro cliente.
       const customerId = user.role === "ADMIN" ? data.customerId : user.id;
 
       const services = await this.serviceRepository.findByIds(data.serviceIds);
@@ -181,9 +184,10 @@ export default class AppointmentService {
         return { status: 403, success: false, message: "Acesso negado." };
       }
 
+      // A Leila (ADMIN) pode ajustar por telefone mesmo quando faltam menos de 2 dias.
+      // Clientes comuns so podem alterar pelo sistema se ainda restarem pelo menos 48 horas.
       if (
-        user.role !== "ADMIN" &&
-        !this.canChangeAppointment(appointment.startDate)
+        !this.canUpdateAppointmentThroughSystem(user, appointment.startDate)
       ) {
         return {
           status: 400,
@@ -341,6 +345,7 @@ export default class AppointmentService {
   private calculateTotalServicesDurationInMinutes = (
     services: IService[],
   ): number => {
+    // Soma a duracao de todos os servicos escolhidos no mesmo horario.
     return services.reduce(
       (total, service) => total + service.estimatedTimeInMinutes,
       0,
@@ -356,6 +361,7 @@ export default class AppointmentService {
     endDate.setHours(this.businessEndHour, 0, 0, 0);
 
     while (baseDate < endDate) {
+      // Precisamos clonar a data atual antes de avancar o ponteiro do loop.
       slots.push(new Date(baseDate));
       baseDate.setMinutes(baseDate.getMinutes() + this.slotDurationInMinutes);
     }
@@ -367,6 +373,7 @@ export default class AppointmentService {
     slotEnd: Date,
     appointments: IAppointmentDetail[],
   ): boolean {
+    // Existe conflito quando o novo intervalo se sobrepoe a outro ja salvo.
     return appointments.some((appointment) => {
       return (
         slotStart < new Date(appointment.endDate) &&
@@ -404,6 +411,7 @@ export default class AppointmentService {
     end: Date,
     excludeAppointmentId?: number,
   ): Promise<boolean> {
+    // No update ignoramos o proprio registro para nao gerar falso positivo.
     const appointments = await this.getAppointmentsByDay(
       start,
       excludeAppointmentId,
@@ -418,7 +426,19 @@ export default class AppointmentService {
     return user.role === "ADMIN" || user.id === customerId;
   }
 
+  private canUpdateAppointmentThroughSystem(
+    user: IAuthenticatedUser,
+    appointmentDate: Date,
+  ): boolean {
+    if (user.role === "ADMIN") {
+      return true;
+    }
+
+    return this.canChangeAppointment(appointmentDate);
+  }
+
   private canChangeAppointment(date: Date): boolean {
+    // A regra de negocio considera 2 dias como uma janela minima de 48 horas.
     const diffInMs = new Date(date).getTime() - new Date().getTime();
     const twoDaysInMs = 1000 * 60 * 60 * 24 * 2;
     return diffInMs >= twoDaysInMs;

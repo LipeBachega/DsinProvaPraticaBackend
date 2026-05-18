@@ -9,6 +9,7 @@ export default class CustomerService {
   private customerRepository = new CustomerRepository();
 
   create = async (customer: ICustomerCreate): Promise<IResponse> => {
+    // Primeiro validamos os campos obrigatorios recebidos da requisicao.
     const { isValid, fields } =
       this.validation.createCustomerValidator(customer);
 
@@ -22,11 +23,12 @@ export default class CustomerService {
     }
 
     try {
+      // Padroniza telefone e e-mail antes de comparar e salvar no banco.
       const sanitizedPhone = customer.phone.replace(/\D/g, "");
+      const normalizedEmail = customer.email.trim().toLowerCase();
 
-      const customerPhoneUnique = await this.customerRepository.findByPhone(
-        customer.phone,
-      );
+      const customerPhoneUnique =
+        await this.customerRepository.findByPhone(sanitizedPhone);
       if (customerPhoneUnique) {
         return {
           status: 400,
@@ -41,9 +43,8 @@ export default class CustomerService {
         };
       }
 
-      const customerEmailUnique = await this.customerRepository.findByEmail(
-        customer.email,
-      );
+      const customerEmailUnique =
+        await this.customerRepository.findByEmail(normalizedEmail);
       if (customerEmailUnique) {
         return {
           status: 400,
@@ -58,16 +59,20 @@ export default class CustomerService {
         };
       }
 
+      // A senha e protegida antes de ser persistida.
       const customerPassword = await hashPassword(customer.password);
 
+      // Este objeto final concentra os dados tratados que vao para o repositorio.
       const sanitizedCustomer = {
         ...customer,
+        email: normalizedEmail,
 
         phone: sanitizedPhone,
 
         password: customerPassword,
       };
 
+      // O repositorio encapsula a conversa direta com o banco.
       await this.customerRepository.create(sanitizedCustomer);
 
       return {

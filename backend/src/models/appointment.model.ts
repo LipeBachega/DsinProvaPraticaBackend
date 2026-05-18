@@ -12,15 +12,15 @@ import type {
 } from "../types/appointment.type.js";
 
 class Appointment extends Model<IAppointment> implements IAppointment {
-  public id!: number;
+  declare id: number;
 
-  public customerId!: number;
+  declare customerId: number;
 
-  public startDate!: Date;
+  declare startDate: Date;
 
-  public endDate!: Date;
+  declare endDate: Date;
 
-  public status!: AppointmentStatus;
+  declare status: AppointmentStatus;
 
   declare setServices: BelongsToManySetAssociationsMixin<any, number>;
 }
