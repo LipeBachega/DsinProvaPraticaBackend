@@ -58,5 +58,5 @@ export async function createDefaultServices() {
     },
   ]);
 
-  console.log("ServiÃ§os padrÃ£o criados.");
+  console.log("Serviços inseridos com sucesso!");
 }
