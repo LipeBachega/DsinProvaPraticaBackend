@@ -36,7 +36,7 @@ export async function createDefaultServices() {
   const servicesCount = await Service.count();
 
   if (servicesCount > 0) {
-    console.log("ServiÃ§os padrÃ£o jÃ¡ existem.");
+    console.log("Serviços padrão já criados.");
     return;
   }
 
