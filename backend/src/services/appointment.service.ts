@@ -64,7 +64,10 @@ export default class AppointmentService {
       const slots = this.generateSlots(requestedDate);
 
       // Com os agendamentos do dia em maos, filtramos apenas os horarios livres.
-      const appointments = await this.getAppointmentsByDay(requestedDate);
+      const appointments = await this.getAppointmentsByDay(
+        requestedDate,
+        query.appointmentId,
+      );
       const availableSlots = [];
 
       for (const slotStart of slots) {

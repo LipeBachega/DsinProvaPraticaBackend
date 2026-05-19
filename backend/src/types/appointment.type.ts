@@ -47,11 +47,13 @@ export interface IAppointmentHistoryQuery {
 export interface IAppointmentAvailabilityQueryInput {
   date?: string;
   serviceIds?: string | string[];
+  appointmentId?: string;
 }
 
 export interface IAppointmentAvailabilityQuery {
   date: string;
   serviceIds: number[];
+  appointmentId?: number;
 }
 
 export interface IAppointmentDetail extends IAppointment {

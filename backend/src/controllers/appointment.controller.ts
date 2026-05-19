@@ -15,10 +15,12 @@ export default class AppointmentController {
     // A query pode vir repetida ou em CSV; aqui normalizamos para number[].
     const query = request.query as IAppointmentAvailabilityQueryInput;
     const serviceIds = this.parseServiceIds(query.serviceIds);
+    const appointmentId = this.parseAppointmentId(query.appointmentId);
 
     const response = await this.appointmentService.availability({
       date: query.date ?? "",
       serviceIds,
+      ...(appointmentId ? { appointmentId } : {}),
     });
 
     return reply.status(response.status).send({
@@ -119,5 +121,19 @@ export default class AppointmentController {
       .flatMap((value) => value.split(","))
       .map((value) => Number(value.trim()))
       .filter((value) => !Number.isNaN(value));
+  }
+
+  private parseAppointmentId(appointmentId?: string): number | undefined {
+    if (!appointmentId) {
+      return undefined;
+    }
+
+    const parsedValue = Number(appointmentId);
+
+    if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+      return undefined;
+    }
+
+    return parsedValue;
   }
 }

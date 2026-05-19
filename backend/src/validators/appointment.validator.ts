@@ -28,6 +28,16 @@ export default class AppointmentValidator {
       });
     }
 
+    if (
+      query.appointmentId !== undefined &&
+      (!Number.isInteger(query.appointmentId) || query.appointmentId <= 0)
+    ) {
+      fields.push({
+        field: "appointmentId",
+        error: "Informe um agendamento valido para ignorar na disponibilidade.",
+      });
+    }
+
     return this.buildValidationResult(fields);
   };
 
