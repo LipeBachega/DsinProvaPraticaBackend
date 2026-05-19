@@ -622,7 +622,7 @@ export default class AppointmentService {
   }
 
   private isAllowedStatus(status: string): boolean {
-    return ["CONFIRMADO", "CONCLUIDO", "CANCELADO"].includes(status);
+    return ["PENDENTE", "CONFIRMADO", "CONCLUIDO", "CANCELADO"].includes(status);
   }
 
   private getWeekRange(date: Date): { weekStart: Date; weekEnd: Date } {
