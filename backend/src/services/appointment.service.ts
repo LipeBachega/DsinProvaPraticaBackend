@@ -452,11 +452,17 @@ export default class AppointmentService {
       const { end: endDate } = getBrazilDayRange(parseBrazilDate(query.endDate));
 
       const appointments =
-        await this.appointmentRepository.findByCustomerAndPeriod(
-          user.id,
-          startDate,
-          endDate,
-        );
+        user.role === "ADMIN"
+          ? await this.appointmentRepository.findByPeriod(
+              startDate,
+              endDate,
+              query.search,
+            )
+          : await this.appointmentRepository.findByCustomerAndPeriod(
+              user.id,
+              startDate,
+              endDate,
+            );
 
       return {
         status: 200,

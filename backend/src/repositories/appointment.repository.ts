@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 
 import Appointment from "../models/appointment.model.js";
+import Customer from "../models/customer.model.js";
 import Service from "../models/service.model.js";
 
 import type {
@@ -28,6 +29,11 @@ export default class AppointmentRepository {
     // O detalhe sempre traz os servicos, porque eles sao parte central do caso de uso.
     const appointment = await Appointment.findByPk(id, {
       include: [
+        {
+          model: Customer,
+          as: "customer",
+          attributes: ["id", "name", "email", "phone"],
+        },
         {
           model: Service,
 
@@ -101,6 +107,69 @@ export default class AppointmentRepository {
       },
 
       include: [
+        {
+          model: Customer,
+          as: "customer",
+          attributes: ["id", "name", "email", "phone"],
+        },
+        {
+          model: Service,
+
+          as: "services",
+
+          through: {
+            attributes: [],
+          },
+        },
+      ],
+
+      order: [["startDate", "ASC"]],
+    });
+
+    return appointments.map(
+      (appointment) => appointment.toJSON() as IAppointmentDetail,
+    );
+  };
+
+  findByPeriod = async (
+    startDate: Date,
+    endDate: Date,
+    search?: string,
+  ): Promise<IAppointmentDetail[]> => {
+    const normalizedSearch = search?.trim();
+    const sanitizedPhoneSearch = normalizedSearch?.replace(/\D/g, "");
+
+    const appointments = await Appointment.findAll({
+      where: {
+        startDate: {
+          [Op.between]: [startDate, endDate],
+        },
+      },
+
+      include: [
+        {
+          model: Customer,
+          as: "customer",
+          attributes: ["id", "name", "email", "phone"],
+          ...(normalizedSearch
+            ? {
+                where: {
+                  [Op.or]: [
+                    {
+                      name: {
+                        [Op.like]: `%${normalizedSearch}%`,
+                      },
+                    },
+                    {
+                      phone: {
+                        [Op.like]: `%${sanitizedPhoneSearch || normalizedSearch}%`,
+                      },
+                    },
+                  ],
+                },
+              }
+            : {}),
+        },
         {
           model: Service,
 

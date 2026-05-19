@@ -42,6 +42,7 @@ export interface IAppointmentUpdateData {
 export interface IAppointmentHistoryQuery {
   startDate: string;
   endDate: string;
+  search?: string;
 }
 
 export interface IAppointmentAvailabilityQueryInput {
@@ -58,6 +59,12 @@ export interface IAppointmentAvailabilityQuery {
 
 export interface IAppointmentDetail extends IAppointment {
   id: number;
+  customer?: {
+    id: number;
+    name: string;
+    email: string;
+    phone: string;
+  };
   services: {
     id: number;
     price: number;
