@@ -1,0 +1,16 @@
+
+# Tecnologias
+
+## Backend
+- **Node.js** com **TypeScript**
+- **Fastify** — framework HTTP rápido e leve
+- **Sequelize** — ORM para lidar com o banco de dados
+- **SQLite** — banco de dados que funciona como arquivo local (sem instalar nada extra)
+- **JWT** — autenticação por token
+- **Argon2** — criptografia de senhas
+
+## Frontend
+- **React 19** com **TypeScript**
+- **Vite** — dev server rápido e build
+- **React Router** — navegação entre páginas
+- **Tailwind CSS** — estilização com classes utilitárias

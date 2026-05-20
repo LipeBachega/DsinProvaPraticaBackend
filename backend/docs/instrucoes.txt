@@ -1,0 +1,37 @@
+# Como rodar
+
+
+## Backend
+
+```bash
+cd Back/backend
+npm install
+npm run dev
+```
+
+O servidor sobe em `http://localhost:3333`. 
+O banco SQLite é criado sozinho na primeira execução, junto com os dados iniciais (admin + serviços).
+
+## Usuário Administrador Inicial
+
+Email: leila@email.com
+Senha: admin123
+
+### .env
+exemplo de .env
+```
+PORT=3333
+JWT_SECRET=super_secret_key
+```
+
+## Frontend
+
+```bash
+cd Front/frontend
+npm install
+npm run dev
+```
+
+Acesse `http://localhost:5173`. O backend precisa estar rodando em `http://localhost:3333`.
+
+> O Vite faz proxy automático: requisições para `/api/*` são redirecionadas para o backend.
