@@ -9,7 +9,6 @@ import type {
   IAppointmentDetail,
   IAppointmentHistoryQuery,
   IAppointmentResponseData,
-  IAppointmentSuggestion,
   IAppointmentStatusUpdateInput,
   IAppointmentUpdateInput,
 } from "../types/appointment.type.js";
@@ -488,7 +487,6 @@ export default class AppointmentService {
     slotEnd: Date,
     appointments: IAppointmentDetail[],
   ): boolean {
-
     // Verificamos se existe algum agendamento que se sobrepõe a data do slot.
 
     // pegamos um dos agendamentos e vemos se a hora inicial é menor que o slot final
