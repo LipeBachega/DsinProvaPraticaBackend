@@ -15,7 +15,6 @@ import type {
 } from "../types/appointment.type.js";
 import type { IAuthenticatedUser } from "../types/auth.type.js";
 import type IResponse from "../types/response.type.js";
-import type { IService } from "../types/service.type.js";
 import AppointmentValidator from "../validators/appointment.validator.js";
 import {
   formatBrazilDateTime,
@@ -28,64 +27,90 @@ import {
 } from "../utils/datetime.lib.js";
 
 export default class AppointmentService {
-  // O sistema sugere horarios de 30 em 30 minutos dentro do expediente.
-  private readonly slotDurationInMinutes = 30;
+  // Horário comercial fixo para simplificar a lógica e os testes,facil de alterar se necessário.
   private readonly businessStartHour = 8;
   private readonly businessEndHour = 18;
+  private readonly slotIntervalInMinutes = 30; // Intervalo entre os slots, atualmente fixado em 30 minutos.
+
+  // Repositories
   private appointmentRepository = new AppointmentRepository();
   private customerRepository = new CustomerRepository();
   private serviceRepository = new ServiceRepository();
+
+  // Validators
   private validation = new AppointmentValidator();
 
+  // 1. DISPONIBILIDADE
   availability = async (
     query: IAppointmentAvailabilityQuery,
   ): Promise<IResponse<IAppointmentAvailabilityResponse>> => {
     try {
+      // Validação dos dados
       const validation = this.validation.availabilityValidator(query);
-      if (!validation.isValid) {
-        return this.validationErrorResponse(validation.fields ?? []);
-      }
+      if (!validation.isValid)
+        return {
+          status: 400,
+          success: false,
+          message: "Dados inválidos.",
+          error: validation.fields,
+        };
 
-      // A consulta por dia nasce em Brasilia porque a agenda do salao e local, nao em UTC.
+      // Converte a string de data recebida para o fuso local (JS é Fogo)
+      //  e buscamos os serviços para validar existência e calcular duração total.
       const requestedDate = parseBrazilDate(query.date);
-
-      // Busca os servicos para descobrir a duracao total do atendimento.
       const services = await this.serviceRepository.findByIds(query.serviceIds);
 
+      // Verificamos se os serviços existem.
       if (services.length !== new Set(query.serviceIds).size) {
-        return this.badRequestResponse(
-          "serviceIds",
-          "Um ou mais servicos informados nao existem.",
-        );
+        return {
+          status: 400,
+          success: false,
+          message: "Dados inválidos.",
+          error: [
+            { field: "serviceIds", error: "Um ou mais serviços não existem." },
+          ],
+        };
       }
 
-      const requiredDurationInMinutes =
-        this.calculateTotalServicesDurationInMinutes(services);
+      // Calculamos a duração total dos serviços escolhidos.
+      const duration = services.reduce(
+        (total, s) => total + s.estimatedTimeInMinutes,
+        0,
+      );
+
+      // Geramos os slots baseados na hora inicial e final do expediente.
       const slots = this.generateSlots(requestedDate);
 
-      // Com os agendamentos do dia em maos, filtramos apenas os horarios livres.
-      const appointments = await this.getAppointmentsByDay(
-        requestedDate,
+      // Define as fronteiras de início e fim do dia para buscar os agendamentos já existentes.
+      const { start, end } = getBrazilDayRange(requestedDate);
+
+      const appointments = await this.appointmentRepository.findByDay(
+        start,
+        end,
         query.appointmentId,
       );
+
+      // aqui vamos armazenar os slots disponíveis para o dia.
       const availableSlots = [];
 
+      // Limite de horário comercial para evitar agendamentos fora do horário.
+      const businessLimit = new Date(requestedDate).setHours(
+        this.businessEndHour,
+        0,
+        0,
+        0,
+      );
+
       for (const slotStart of slots) {
-        // Cada horario sugerido ganha a duracao total dos servicos escolhidos.
-        const slotEnd = new Date(
-          slotStart.getTime() + requiredDurationInMinutes * 60000,
-        );
-        const businessLimit = new Date(requestedDate);
-        businessLimit.setHours(this.businessEndHour, 0, 0, 0);
+        // aqui calculamos o tempo final baseado no slot da vez
+        const slotEnd = new Date(slotStart.getTime() + duration * 60000);
 
-        if (slotEnd > businessLimit) {
-          continue;
-        }
+        if (slotEnd.getTime() > businessLimit) continue; // se o slot selecionado terminar depois do horario final ele nao inclui.
 
-        if (this.hasConflict(slotStart, slotEnd, appointments)) {
-          continue;
-        }
+        // Verificamos se nesse bloco de tempo tem algum agendamento que conflite
+        if (this.hasConflict(slotStart, slotEnd, appointments)) continue;
 
+        // Se nenhum dos checks acima for verdadeiro adicionamos o slot
         availableSlots.push({
           startTime: formatBrazilTime(slotStart),
           endTime: formatBrazilTime(slotEnd),
@@ -97,106 +122,99 @@ export default class AppointmentService {
       return {
         status: 200,
         success: true,
-        message: "Horarios disponiveis listados com sucesso.",
+        message: "Horários listados.",
         data: {
           date: query.date,
-          requiredDurationInMinutes,
+          requiredDurationInMinutes: duration,
           availableSlots,
         },
       };
     } catch (error) {
-      return {
-        status: 500,
-        success: false,
-        message: "Erro interno no servidor.",
-        error,
-      };
+      return { status: 500, success: false, message: "Erro interno.", error };
     }
   };
 
+  // 2. CRIAÇÃO
   create = async (
     user: IAuthenticatedUser,
     data: IAppointmentCreateInput | IAppointmentCreateData,
   ): Promise<IResponse<IAppointmentResponseData>> => {
     try {
       const validation = this.validation.createValidator(data);
-      if (!validation.isValid) {
-        return this.validationErrorResponse(validation.fields ?? []);
-      }
+      if (!validation.isValid)
+        return {
+          status: 400,
+          success: false,
+          message: "Dados inválidos.",
+          error: validation.fields,
+        };
 
-      // Cliente comum agenda apenas para si; admin pode informar outro cliente manualmente.
       const customerId =
         user.role === "ADMIN" ? Number((data as any).customerId) : user.id;
-
-      if (user.role === "ADMIN") {
-        // Quando o admin agenda em nome de outra pessoa, garantimos que o cliente exista.
-        const customerExists = await this.customerRepository.findById(customerId);
-
-        if (!customerExists) {
-          return this.badRequestResponse(
-            "customerId",
-            "O cliente informado nao existe.",
-          );
-        }
+      if (
+        user.role === "ADMIN" &&
+        !(await this.customerRepository.findById(customerId))
+      ) {
+        return {
+          status: 400,
+          success: false,
+          message: "Dados inválidos.",
+          error: [{ field: "customerId", error: "Cliente não existe." }],
+        };
       }
 
       const services = await this.serviceRepository.findByIds(data.serviceIds);
       if (services.length !== new Set(data.serviceIds).size) {
-        return this.badRequestResponse(
-          "serviceIds",
-          "Um ou mais servicos informados nao existem.",
-        );
+        return {
+          status: 400,
+          success: false,
+          message: "Dados inválidos.",
+          error: [{ field: "serviceIds", error: "Serviço não existe." }],
+        };
       }
 
-      const requiredDurationInMinutes =
-        this.calculateTotalServicesDurationInMinutes(services);
-      // O payload pode vir com offset explicito; aqui normalizamos tudo para um Date consistente.
+      const duration = services.reduce(
+        (total, s) => total + s.estimatedTimeInMinutes,
+        0,
+      );
       const startDate = parseBrazilDateTime(data.startDate);
-      const endDate = new Date(
-        startDate.getTime() + requiredDurationInMinutes * 60000,
-      );
+      const endDate = new Date(startDate.getTime() + duration * 60000);
 
-      if (!this.isWithinBusinessHours(startDate, endDate)) {
+      // Validação de horário comercial integrada
+      if (
+        startDate.getHours() < this.businessStartHour ||
+        endDate.getHours() > this.businessEndHour ||
+        (endDate.getHours() === this.businessEndHour &&
+          endDate.getMinutes() > 0)
+      ) {
         return {
           status: 400,
           success: false,
-          message: "Horario fora dos limites do expediente.",
+          message: "Horário fora do expediente.",
         };
       }
 
-      const hasConflict = await this.validateScheduleConflict(
-        startDate,
-        endDate,
+      // Validação de conflito direta
+      const { start, end } = getBrazilDayRange(startDate);
+      const dayAppointments = await this.appointmentRepository.findByDay(
+        start,
+        end,
       );
-      if (hasConflict) {
+      if (this.hasConflict(startDate, endDate, dayAppointments)) {
         return {
           status: 400,
           success: false,
-          message: "Ja existe um agendamento nesse horario.",
+          message: "Já existe um agendamento nesse horário.",
         };
       }
 
-      const appointmentData: IAppointmentCreateData = {
+      const appointment = await this.appointmentRepository.create({
         customerId,
         startDate,
         endDate,
         serviceIds: data.serviceIds,
-      };
-
-      const appointment = await this.appointmentRepository.create(
-        appointmentData,
-      );
-
+      });
       const detail = await this.appointmentRepository.findById(appointment.id);
-      if (!detail) {
-        return {
-          status: 500,
-          success: false,
-          message: "Erro interno no servidor ao buscar o agendamento criado.",
-        };
-      }
-
-      // Se ja existe outro agendamento da cliente na mesma semana, apenas sugerimos.
       const suggestion = await this.buildSameWeekSuggestion(
         customerId,
         startDate,
@@ -206,26 +224,24 @@ export default class AppointmentService {
       return {
         status: 201,
         success: true,
-        message: "Agendamento criado com sucesso.",
+        message: "Agendamento criado.",
         data: suggestion
           ? {
-              appointment: this.serializeAppointmentDetail(detail),
-              suggestion: this.serializeSuggestion(suggestion),
+              appointment: this.serialize(detail!),
+              suggestion: {
+                ...suggestion,
+                startDate: formatBrazilDateTime(suggestion.startDate),
+                endDate: formatBrazilDateTime(suggestion.endDate),
+              },
             }
-          : {
-              appointment: this.serializeAppointmentDetail(detail),
-            },
+          : { appointment: this.serialize(detail!) },
       };
     } catch (error) {
-      return {
-        status: 500,
-        success: false,
-        message: "Erro interno no servidor.",
-        error,
-      };
+      return { status: 500, success: false, message: "Erro interno.", error };
     }
   };
 
+  // 3. ATUALIZAÇÃO
   update = async (
     user: IAuthenticatedUser,
     appointmentId: number,
@@ -233,72 +249,59 @@ export default class AppointmentService {
   ): Promise<IResponse<IAppointmentResponseData>> => {
     try {
       const validation = this.validation.updateValidator(data);
-      if (!validation.isValid) {
-        return this.validationErrorResponse(validation.fields ?? []);
-      }
+      if (!validation.isValid)
+        return {
+          status: 400,
+          success: false,
+          message: "Dados inválidos.",
+          error: validation.fields,
+        };
 
       const appointment =
         await this.appointmentRepository.findModelById(appointmentId);
-
-      if (!appointment) {
+      if (!appointment)
         return {
           status: 404,
           success: false,
-          message: "Agendamento nao encontrado.",
+          message: "Agendamento não encontrado.",
         };
-      }
 
-      if (!this.canAccessAppointment(user, appointment.customerId)) {
+      if (user.role !== "ADMIN" && user.id !== appointment.customerId) {
         return { status: 403, success: false, message: "Acesso negado." };
       }
 
-      // A Leila (ADMIN) pode ajustar por telefone mesmo quando faltam menos de 2 dias.
-      // Clientes comuns so podem alterar pelo sistema se ainda restarem pelo menos 48 horas.
-      // Pela regra do desafio, a verificacao olha para a data original do agendamento.
-      if (
-        !this.canUpdateAppointmentThroughSystem(user, appointment.startDate)
-      ) {
-        return {
-          status: 400,
-          success: false,
-          message:
-            "O agendamento so pode ser alterado pelo sistema ate 2 dias antes da data marcada.",
-        };
+      // Regra dos 2 dias (48 horas) simplificada aqui dentro
+      if (user.role !== "ADMIN") {
+        const diffInMs =
+          new Date(appointment.startDate).getTime() - new Date().getTime();
+        if (diffInMs < 1000 * 60 * 60 * 24 * 2) {
+          return {
+            status: 400,
+            success: false,
+            message: "Alterações só são permitidas até 2 dias antes.",
+          };
+        }
       }
 
       const services = await this.serviceRepository.findByIds(data.serviceIds);
-      if (services.length !== new Set(data.serviceIds).size) {
-        return this.badRequestResponse(
-          "serviceIds",
-          "Um ou mais servicos informados nao existem.",
-        );
-      }
-
-      const requiredDurationInMinutes =
-        this.calculateTotalServicesDurationInMinutes(services);
-      const startDate = parseBrazilDateTime(data.startDate);
-      const endDate = new Date(
-        startDate.getTime() + requiredDurationInMinutes * 60000,
+      const duration = services.reduce(
+        (total, s) => total + s.estimatedTimeInMinutes,
+        0,
       );
+      const startDate = parseBrazilDateTime(data.startDate);
+      const endDate = new Date(startDate.getTime() + duration * 60000);
 
-      if (!this.isWithinBusinessHours(startDate, endDate)) {
-        return {
-          status: 400,
-          success: false,
-          message: "Horario fora dos limites do expediente.",
-        };
-      }
-
-      const hasConflict = await this.validateScheduleConflict(
-        startDate,
-        endDate,
+      const { start, end } = getBrazilDayRange(startDate);
+      const dayAppointments = await this.appointmentRepository.findByDay(
+        start,
+        end,
         appointment.id,
       );
-      if (hasConflict) {
+      if (this.hasConflict(startDate, endDate, dayAppointments)) {
         return {
           status: 400,
           success: false,
-          message: "Ja existe um agendamento nesse horario.",
+          message: "Horário indisponível.",
         };
       }
 
@@ -307,17 +310,7 @@ export default class AppointmentService {
         endDate,
         serviceIds: data.serviceIds,
       });
-
       const detail = await this.appointmentRepository.findById(appointmentId);
-      if (!detail) {
-        return {
-          status: 500,
-          success: false,
-          message: "Erro interno no servidor ao atualizar agendamento.",
-        };
-      }
-
-      // Na alteracao, a resposta pode trazer a mesma sugestao informativa.
       const suggestion = await this.buildSameWeekSuggestion(
         appointment.customerId,
         startDate,
@@ -327,24 +320,29 @@ export default class AppointmentService {
       return {
         status: 200,
         success: true,
-        message: "Agendamento atualizado com sucesso.",
+        message: "Agendamento atualizado.",
         data: suggestion
           ? {
-              appointment: this.serializeAppointmentDetail(detail),
-              suggestion: this.serializeSuggestion(suggestion),
+              appointment: this.serialize(detail!),
+              suggestion: {
+                ...suggestion,
+                startDate: formatBrazilDateTime(suggestion.startDate),
+                endDate: formatBrazilDateTime(suggestion.endDate),
+              },
             }
-          : { appointment: this.serializeAppointmentDetail(detail) },
+          : { appointment: this.serialize(detail!) },
       };
     } catch (error: any) {
       return {
         status: 500,
         success: false,
-        message: "Erro interno no servidor ao atualizar agendamento.",
+        message: "Erro interno.",
         error: error.message,
       };
     }
   };
 
+  // 4. ATUALIZAÇÃO DE STATUS
   updateStatus = async (
     appointmentId: number,
     data: IAppointmentStatusUpdateInput,
@@ -352,50 +350,40 @@ export default class AppointmentService {
     try {
       const appointment =
         await this.appointmentRepository.findModelById(appointmentId);
-
-      if (!appointment) {
+      if (!appointment)
         return {
           status: 404,
           success: false,
-          message: "Agendamento nao encontrado.",
+          message: "Agendamento não encontrado.",
         };
-      }
 
-      // A Leila so pode usar os status previstos pela regra de negocio.
-      if (!this.isAllowedStatus(data.status)) {
-        return this.badRequestResponse(
-          "status",
-          "Status invalido para o agendamento.",
-        );
+      if (
+        !["PENDENTE", "CONFIRMADO", "CONCLUIDO", "CANCELADO"].includes(
+          data.status,
+        )
+      ) {
+        return { status: 400, success: false, message: "Status inválido." };
       }
 
       await this.appointmentRepository.updateStatus(appointment, data.status);
-
       const detail = await this.appointmentRepository.findById(appointmentId);
-      if (!detail) {
-        return {
-          status: 500,
-          success: false,
-          message: "Erro interno no servidor ao atualizar status do agendamento.",
-        };
-      }
-
       return {
         status: 200,
         success: true,
-        message: "Status do agendamento atualizado com sucesso.",
-        data: { appointment: this.serializeAppointmentDetail(detail) },
+        message: "Status atualizado.",
+        data: { appointment: this.serialize(detail!) },
       };
     } catch (error: any) {
       return {
         status: 500,
         success: false,
-        message: "Erro interno no servidor ao atualizar status do agendamento.",
+        message: "Erro interno.",
         error: error.message,
       };
     }
   };
 
+  // 5. DETALHES
   detail = async (
     appointmentId: number,
     user: IAuthenticatedUser,
@@ -403,113 +391,94 @@ export default class AppointmentService {
     try {
       const appointment =
         await this.appointmentRepository.findById(appointmentId);
-
-      if (!appointment) {
+      if (!appointment)
         return {
           status: 404,
           success: false,
-          message: "Agendamento nao encontrado.",
+          message: "Agendamento não encontrado.",
         };
-      }
 
       if (appointment.customerId !== user.id && user.role !== "ADMIN") {
-        return {
-          status: 403,
-          success: false,
-          message: "Voce nao possui permissao para acessar este agendamento.",
-        };
+        return { status: 403, success: false, message: "Acesso negado." };
       }
-
       return {
         status: 200,
         success: true,
-        message: "Agendamento encontrado com sucesso.",
-        data: this.serializeAppointmentDetail(appointment),
+        message: "Sucesso.",
+        data: this.serialize(appointment),
       };
     } catch (error: any) {
       return {
         status: 500,
         success: false,
-        message: "Erro interno no servidor ao buscar agendamento.",
+        message: "Erro interno.",
         error: error.message,
       };
     }
   };
 
+  // 6. HISTÓRICO
   history = async (
     user: IAuthenticatedUser,
     query: IAppointmentHistoryQuery,
   ): Promise<IResponse<IAppointmentDetail[]>> => {
     try {
       const validation = this.validation.historyValidator(query);
-      if (!validation.isValid) {
-        return this.validationErrorResponse(validation.fields ?? []);
-      }
+      if (!validation.isValid)
+        return {
+          status: 400,
+          success: false,
+          message: "Dados inválidos.",
+          error: validation.fields,
+        };
 
-      const { start: startDate } = getBrazilDayRange(
-        parseBrazilDate(query.startDate),
-      );
-      const { end: endDate } = getBrazilDayRange(parseBrazilDate(query.endDate));
+      const { start } = getBrazilDayRange(parseBrazilDate(query.startDate));
+      const { end } = getBrazilDayRange(parseBrazilDate(query.endDate));
 
       const appointments =
         user.role === "ADMIN"
           ? await this.appointmentRepository.findByPeriod(
-              startDate,
-              endDate,
+              start,
+              end,
               query.search,
             )
           : await this.appointmentRepository.findByCustomerAndPeriod(
               user.id,
-              startDate,
-              endDate,
+              start,
+              end,
             );
 
       return {
         status: 200,
         success: true,
-        message: "Historico de agendamentos listado com sucesso.",
-        data: appointments.map((appointment) =>
-          this.serializeAppointmentDetail(appointment),
-        ),
+        message: "Histórico listado.",
+        data: appointments.map((a) => this.serialize(a)),
       };
     } catch (error: any) {
       return {
         status: 500,
         success: false,
-        message:
-          "Erro interno no servidor ao listar historico de agendamentos.",
+        message: "Erro interno.",
         error: error.message,
       };
     }
   };
 
   // ==========================================
-  // Metodos Auxiliares e Regras de Negocio
+  // METODOS INTERNOS ESSENCIAIS (REDUZIDOS)
   // ==========================================
 
-  private calculateTotalServicesDurationInMinutes = (
-    services: IService[],
-  ): number => {
-    // Soma a duracao de todos os servicos escolhidos no mesmo horario.
-    return services.reduce(
-      (total, service) => total + service.estimatedTimeInMinutes,
-      0,
-    );
-  };
-
   private generateSlots(date: Date): Date[] {
-    const slots: Date[] = [];
-    const baseDate = new Date(date);
-    baseDate.setHours(this.businessStartHour, 0, 0, 0);
+    const slots: Date[] = []; // Slots para os agendamentos
 
-    const endDate = new Date(date);
-    endDate.setHours(this.businessEndHour, 0, 0, 0);
+    const baseDate = new Date(date).setHours(this.businessStartHour, 0, 0, 0);
+    const endDate = new Date(date).setHours(this.businessEndHour, 0, 0, 0);
+    let current = new Date(baseDate);
 
-    while (baseDate < endDate) {
-      // Precisamos clonar a data atual antes de avancar o ponteiro do loop.
-      slots.push(new Date(baseDate));
-      // A agenda avanca em blocos fixos de 30 minutos.
-      baseDate.setMinutes(baseDate.getMinutes() + this.slotDurationInMinutes);
+    // Enquanto o tempo atual for menor que o horário final do expediente, vamos gerando os slots com o intervalo definido.
+    while (current.getTime() < endDate) {
+      slots.push(new Date(current));
+      current.setMinutes(current.getMinutes() + this.slotIntervalInMinutes);
     }
     return slots;
   }
@@ -519,193 +488,66 @@ export default class AppointmentService {
     slotEnd: Date,
     appointments: IAppointmentDetail[],
   ): boolean {
-    // Existe conflito quando o novo intervalo se sobrepoe a outro ja salvo.
-    return appointments.some((appointment) => {
-      return (
-        slotStart < new Date(appointment.endDate) &&
-        slotEnd > new Date(appointment.startDate)
-      );
-    });
-  }
 
-  private isWithinBusinessHours(start: Date, end: Date): boolean {
-    // O atendimento precisa comecar depois da abertura e terminar antes do fechamento.
-    const businessStart = new Date(start).setHours(
-      this.businessStartHour,
-      0,
-      0,
-      0,
+    // Verificamos se existe algum agendamento que se sobrepõe a data do slot.
+
+    // pegamos um dos agendamentos e vemos se a hora inicial é menor que o slot final
+    // e se a hora final é maior que o slot inicial.
+    return appointments.some(
+      (a) => slotStart < new Date(a.endDate) && slotEnd > new Date(a.startDate),
     );
-    const businessEnd = new Date(start).setHours(this.businessEndHour, 0, 0, 0);
-    return start.getTime() >= businessStart && end.getTime() <= businessEnd;
-  }
-
-  private async getAppointmentsByDay(
-    date: Date,
-    excludeAppointmentId?: number,
-  ): Promise<IAppointmentDetail[]> {
-    // O recorte diario usa as fronteiras de Brasilia para casar com a visao do usuario.
-    const { start, end } = getBrazilDayRange(date);
-    return this.appointmentRepository.findByDay(
-      start,
-      end,
-      excludeAppointmentId,
-    );
-  }
-
-  private async validateScheduleConflict(
-    start: Date,
-    end: Date,
-    excludeAppointmentId?: number,
-  ): Promise<boolean> {
-    // No update ignoramos o proprio registro para nao gerar falso positivo.
-    const appointments = await this.getAppointmentsByDay(
-      start,
-      excludeAppointmentId,
-    );
-    return this.hasConflict(start, end, appointments);
-  }
-
-  private canAccessAppointment(
-    user: IAuthenticatedUser,
-    customerId: number,
-  ): boolean {
-    return user.role === "ADMIN" || user.id === customerId;
-  }
-
-  private canUpdateAppointmentThroughSystem(
-    user: IAuthenticatedUser,
-    appointmentDate: Date,
-  ): boolean {
-    if (user.role === "ADMIN") {
-      return true;
-    }
-
-    return this.canChangeAppointment(appointmentDate);
-  }
-
-  private canChangeAppointment(date: Date): boolean {
-    // A regra de negocio considera 2 dias como uma janela minima de 48 horas.
-    const diffInMs = new Date(date).getTime() - new Date().getTime();
-    const twoDaysInMs = 1000 * 60 * 60 * 24 * 2;
-    return diffInMs >= twoDaysInMs;
   }
 
   private async buildSameWeekSuggestion(
     customerId: number,
     appointmentDate: Date,
-    excludeAppointmentId?: number,
-  ): Promise<IAppointmentSuggestion | undefined> {
-    const { weekStart, weekEnd } = this.getWeekRange(appointmentDate);
-    const firstAppointment = await this.appointmentRepository.findFirstInWeek(
+    excludeId?: number,
+  ): Promise<any> {
+    const { start, end } = getBrazilWeekRange(appointmentDate);
+    const firstInWeek = await this.appointmentRepository.findFirstInWeek(
       customerId,
-      weekStart,
-      weekEnd,
-      excludeAppointmentId,
+      start,
+      end,
+      excludeId,
     );
 
-    if (!firstAppointment) {
+    if (
+      !firstInWeek ||
+      isSameBrazilCalendarDay(firstInWeek.startDate, appointmentDate)
+    )
       return undefined;
-    }
-
-    if (this.isSameCalendarDay(firstAppointment.startDate, appointmentDate)) {
-      return undefined;
-    }
 
     return {
-      appointmentId: firstAppointment.id,
-      startDate: firstAppointment.startDate,
-      endDate: firstAppointment.endDate,
+      appointmentId: firstInWeek.id,
+      startDate: firstInWeek.startDate,
+      endDate: firstInWeek.endDate,
       message:
-        "Voce ja possui um agendamento nesta semana. Considere concentrar os servicos na data do primeiro agendamento.",
+        "Você já possui um agendamento nesta semana. Considere concentrar os serviços no mesmo dia.",
     };
   }
 
-  private isAllowedStatus(status: string): boolean {
-    return ["PENDENTE", "CONFIRMADO", "CONCLUIDO", "CANCELADO"].includes(status);
-  }
-
-  private getWeekRange(date: Date): { weekStart: Date; weekEnd: Date } {
-    const { start, end } = getBrazilWeekRange(date);
-
-    return {
-      weekStart: start,
-      weekEnd: end,
-    };
-  }
-
-  private isSameCalendarDay(
-    dateA: Date | string,
-    dateB: Date | string,
-  ): boolean {
-    return isSameBrazilCalendarDay(dateA, dateB);
-  }
-
-  private badRequestResponse<T = unknown>(
-    field: string,
-    error: string,
-  ): IResponse<T> {
-    return {
-      status: 400,
-      success: false,
-      message: "Os dados fornecidos nao sao validos.",
-      error: [{ field, error }],
-    };
-  }
-
-  private validationErrorResponse<T = unknown>(
-    fields: { field: string; error: string }[],
-  ): IResponse<T> {
-    return {
-      status: 400,
-      success: false,
-      message: "Os dados fornecidos nao sao validos.",
-      error: fields,
-    };
-  }
-
-  private serializeAppointmentDetail(
-    appointment: IAppointmentDetail,
-  ): IAppointmentDetail {
-    // A API responde em horario de Brasilia para evitar que o front tenha de "adivinhar" o fuso.
-    const serializedAppointment = this.serializeTimestampFields({
-      ...appointment,
-      startDate: formatBrazilDateTime(appointment.startDate),
-      endDate: formatBrazilDateTime(appointment.endDate),
+  private serialize(data: any): any {
+    const formatTimestamps = (obj: any) => ({
+      ...obj,
+      createdAt: obj.createdAt
+        ? formatBrazilDateTime(obj.createdAt)
+        : undefined,
+      updatedAt: obj.updatedAt
+        ? formatBrazilDateTime(obj.updatedAt)
+        : undefined,
     });
 
-    if (Array.isArray(serializedAppointment.services)) {
-      serializedAppointment.services = serializedAppointment.services.map(
-        (service) => this.serializeTimestampFields(service),
+    const serialized = formatTimestamps({
+      ...data,
+      startDate: formatBrazilDateTime(data.startDate),
+      endDate: formatBrazilDateTime(data.endDate),
+    });
+
+    if (Array.isArray(serialized.services)) {
+      serialized.services = serialized.services.map((s: any) =>
+        formatTimestamps(s),
       );
     }
-
-    return serializedAppointment as IAppointmentDetail;
-  }
-
-  private serializeSuggestion(
-    suggestion: IAppointmentSuggestion,
-  ): IAppointmentSuggestion {
-    return {
-      ...suggestion,
-      startDate: formatBrazilDateTime(suggestion.startDate),
-      endDate: formatBrazilDateTime(suggestion.endDate),
-    };
-  }
-
-  private serializeTimestampFields<T>(data: T): T {
-    const serializedData = {
-      ...(data as Record<string, any>),
-    };
-
-    if (serializedData.createdAt) {
-      serializedData.createdAt = formatBrazilDateTime(serializedData.createdAt);
-    }
-
-    if (serializedData.updatedAt) {
-      serializedData.updatedAt = formatBrazilDateTime(serializedData.updatedAt);
-    }
-
-    return serializedData as T;
+    return serialized;
   }
 }
